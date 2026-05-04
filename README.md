@@ -114,6 +114,15 @@ app/
 
 本项目基于原项目的 GPL-3.0 许可证。
 
+## 👥 贡献者
+
+- **小花荣** ([@adidalin](https://github.com/adidalin))
+  - 添加 DeepSeek AI 字幕修正功能
+  - 添加字幕预览和编辑功能
+  - 添加 AI 修正对比弹窗
+  - 添加配置管理功能
+  - 📧 联系邮箱：adidalin@qq.com
+
 ## 🙏 致谢
 
 - [WEIFENG2333](https://github.com/WEIFENG2333) - 原项目作者
