@@ -37,9 +37,11 @@ Thumbs.db
 
 # Project specific
 deepseek_config.json
-*.exe
-runtime/
 .ruff_cache/
+
+# Executable files (keep AsrTools.exe and ffmpeg.exe)
+# *.exe
+# runtime/
 
 # Logs
 *.log
