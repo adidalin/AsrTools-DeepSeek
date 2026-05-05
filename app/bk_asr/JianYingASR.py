@@ -120,7 +120,12 @@ class JianYingASR(BaseASR):
         # Replace with your actual endpoint URL
         get_sign_url = 'https://asrtools-update.bkfeng.top/sign'
         try:
-            response = requests.post(get_sign_url, json=data)
+            headers = {
+                'User-Agent': 'AsrTools',
+                'tdid': self.tdid,
+                't': current_time,
+            }
+            response = requests.post(get_sign_url, json=data, headers=headers)
             response.raise_for_status()
             response_data = response.json()
             sign = response_data.get('sign')
