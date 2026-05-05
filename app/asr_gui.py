@@ -81,12 +81,19 @@ logging.basicConfig(
 class SubtitleEditDialog(QDialog):
     """字幕编辑弹窗 - 支持处理进度显示和手动编辑"""
 
-    def __init__(self, original_data=None, parent=None):
+    def __init__(self, original_data=None, parent=None, mode="correct"):
+        """
+        Args:
+            original_data: 原始字幕数据
+            parent: 父窗口
+            mode: "correct"=字幕修正模式, "bilingual"=双语翻译模式
+        """
         super().__init__(parent)
         self.result = None
         self.original_data = original_data
-        self.setWindowTitle("字幕修正")
-        self.setMinimumSize(1000, 700)
+        self.mode = mode
+        self.setWindowTitle("字幕修正" if mode == "correct" else "字幕翻译(双语)")
+        self.setMinimumSize(1200 if mode == "bilingual" else 1000, 700)
         self.init_ui()
 
         # 如果有原始数据，先显示原始字幕
@@ -107,7 +114,10 @@ class SubtitleEditDialog(QDialog):
         layout.addWidget(self.summary_group)
 
         # 处理进度提示（显示在表格上方）
-        self.progress_label = QLabel("⏳ 正在使用DeepSeek处理字幕，请稍候...")
+        progress_text = "⏳ 正在使用DeepSeek处理字幕，请稍候..."
+        if self.mode == "bilingual":
+            progress_text = "⏳ 正在校正并翻译字幕，请稍候..."
+        self.progress_label = QLabel(progress_text)
         self.progress_label.setAlignment(Qt.AlignCenter)
         self.progress_label.setStyleSheet(
             "font-size: 14px; color: #0078d4; padding: 10px; background-color: #e6f3ff;"
@@ -125,31 +135,45 @@ class SubtitleEditDialog(QDialog):
         layout.addWidget(self.stats_widget)
 
         # 提示标签
-        self.tip_label = QLabel("💡 提示：修正后字幕列可直接编辑")
+        if self.mode == "bilingual":
+            self.tip_label = QLabel("💡 提示：校正后字幕和英文翻译列可直接编辑 | 仅中文变动时高亮")
+        else:
+            self.tip_label = QLabel("💡 提示：修正后字幕列可直接编辑")
         self.tip_label.setStyleSheet("color: gray; font-size: 11px;")
         layout.addWidget(self.tip_label)
 
         # 对比表格
         self.compare_table = QTableWidget()
-        self.compare_table.setColumnCount(5)
-        self.compare_table.setHorizontalHeaderLabels(
-            ["行号", "时间戳", "原始字幕", "修正后字幕", "修改原因"]
-        )
-        self.compare_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
-        self.compare_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Fixed)
-        self.compare_table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.Stretch
-        )
-        self.compare_table.horizontalHeader().setSectionResizeMode(
-            3, QHeaderView.Stretch
-        )
-        self.compare_table.horizontalHeader().setSectionResizeMode(
-            4, QHeaderView.Stretch
-        )
-        self.compare_table.setColumnWidth(0, 50)
-        self.compare_table.setColumnWidth(1, 180)
+
+        if self.mode == "bilingual":
+            self.compare_table.setColumnCount(6)
+            self.compare_table.setHorizontalHeaderLabels(
+                ["行号", "时间戳", "原始字幕", "校正后字幕", "英文翻译", "修改原因"]
+            )
+            self.compare_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
+            self.compare_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Fixed)
+            self.compare_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+            self.compare_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+            self.compare_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+            self.compare_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Fixed)
+            self.compare_table.setColumnWidth(0, 50)
+            self.compare_table.setColumnWidth(1, 180)
+            self.compare_table.setColumnWidth(5, 150)
+        else:
+            self.compare_table.setColumnCount(5)
+            self.compare_table.setHorizontalHeaderLabels(
+                ["行号", "时间戳", "原始字幕", "修正后字幕", "修改原因"]
+            )
+            self.compare_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
+            self.compare_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Fixed)
+            self.compare_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+            self.compare_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+            self.compare_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+            self.compare_table.setColumnWidth(0, 50)
+            self.compare_table.setColumnWidth(1, 180)
+
         self.compare_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        # 允许编辑修正后字幕列（第3列）
+        # 允许编辑修正后字幕列和翻译列
         self.compare_table.setEditTriggers(
             QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed
         )
@@ -160,7 +184,8 @@ class SubtitleEditDialog(QDialog):
         self.button_layout = QHBoxLayout()
         self.button_layout.addStretch()
 
-        self.accept_button = PushButton("应用修正")
+        btn_text = "应用修正" if self.mode == "correct" else "应用翻译"
+        self.accept_button = PushButton(btn_text)
         self.accept_button.clicked.connect(self.accept)
         self.accept_button.setEnabled(False)
         self.button_layout.addWidget(self.accept_button)
@@ -197,10 +222,21 @@ class SubtitleEditDialog(QDialog):
             waiting_item.setForeground(QColor("gray"))
             self.compare_table.setItem(i, 3, waiting_item)
 
-            # 修改原因
-            reason_item = QTableWidgetItem("")
-            reason_item.setFlags(reason_item.flags() & ~Qt.ItemIsEditable)
-            self.compare_table.setItem(i, 4, reason_item)
+            if self.mode == "bilingual":
+                # 英文翻译列（显示等待处理）
+                trans_item = QTableWidgetItem("等待处理...")
+                trans_item.setForeground(QColor("gray"))
+                self.compare_table.setItem(i, 4, trans_item)
+
+                # 修改原因
+                reason_item = QTableWidgetItem("")
+                reason_item.setFlags(reason_item.flags() & ~Qt.ItemIsEditable)
+                self.compare_table.setItem(i, 5, reason_item)
+            else:
+                # 修改原因
+                reason_item = QTableWidgetItem("")
+                reason_item.setFlags(reason_item.flags() & ~Qt.ItemIsEditable)
+                self.compare_table.setItem(i, 4, reason_item)
 
     def set_result(self, result: SubtitleProcessResult):
         """设置处理结果"""
@@ -263,42 +299,80 @@ class SubtitleEditDialog(QDialog):
             original_item.setFlags(original_item.flags() & ~Qt.ItemIsEditable)
             self.compare_table.setItem(i, 2, original_item)
 
-            # 修正后字幕（可编辑）
-            processed_text = processed_segs[i].text if i < len(processed_segs) else ""
-            self.compare_table.setItem(i, 3, QTableWidgetItem(processed_text))
+            if self.mode == "bilingual":
+                # 校正后字幕（可编辑）- 取纯中文部分
+                processed_text = ""
+                translated_text = ""
+                if i < len(processed_segs):
+                    seg_text = processed_segs[i].text
+                    if "\n" in seg_text:
+                        parts = seg_text.split("\n", 1)
+                        processed_text = parts[0]
+                        translated_text = parts[1] if len(parts) > 1 else ""
+                    else:
+                        processed_text = seg_text
 
-            # 修改原因（只读）
-            reason = reasons.get(i + 1, "")
-            reason_item = QTableWidgetItem(reason)
-            reason_item.setFlags(reason_item.flags() & ~Qt.ItemIsEditable)
-            self.compare_table.setItem(i, 4, reason_item)
+                self.compare_table.setItem(i, 3, QTableWidgetItem(processed_text))
+                self.compare_table.setItem(i, 4, QTableWidgetItem(translated_text))
 
-            # 如果有修改，高亮显示
-            if reason:
-                for j in range(5):
-                    item = self.compare_table.item(i, j)
-                    if item:
-                        item.setBackground(QColor(255, 255, 200))  # 浅黄色背景
+                # 修改原因（只读）
+                reason = reasons.get(i + 1, "")
+                reason_item = QTableWidgetItem(reason)
+                reason_item.setFlags(reason_item.flags() & ~Qt.ItemIsEditable)
+                self.compare_table.setItem(i, 5, reason_item)
+
+                # 仅在中文变动时高亮（原始字幕 != 校正后字幕）
+                original_text = original_segs[i].text.strip()
+                corrected_text = processed_text.strip()
+                if original_text != corrected_text:
+                    for j in range(6):
+                        item = self.compare_table.item(i, j)
+                        if item:
+                            item.setBackground(QColor(255, 255, 200))
+            else:
+                # 修正后字幕（可编辑）
+                processed_text = processed_segs[i].text if i < len(processed_segs) else ""
+                self.compare_table.setItem(i, 3, QTableWidgetItem(processed_text))
+
+                # 修改原因（只读）
+                reason = reasons.get(i + 1, "")
+                reason_item = QTableWidgetItem(reason)
+                reason_item.setFlags(reason_item.flags() & ~Qt.ItemIsEditable)
+                self.compare_table.setItem(i, 4, reason_item)
+
+                # 如果有修改，高亮显示
+                if reason:
+                    for j in range(5):
+                        item = self.compare_table.item(i, j)
+                        if item:
+                            item.setBackground(QColor(255, 255, 200))
 
     def get_processed_data(self):
         """获取编辑后的字幕数据"""
         if not self.result:
             return None
 
+        from .bk_asr.ASRData import ASRDataSeg, ASRData
+
         # 从表格中读取编辑后的字幕
         segments = []
         for i in range(self.compare_table.rowCount()):
             time_text = self.compare_table.item(i, 1).text()
-            processed_text = self.compare_table.item(i, 3).text()
+
+            if self.mode == "bilingual":
+                # 双语模式：合并校正后字幕和英文翻译
+                corrected_text = self.compare_table.item(i, 3).text()
+                translated_text = self.compare_table.item(i, 4).text()
+                if translated_text and translated_text != "等待处理...":
+                    processed_text = f"{corrected_text}\n{translated_text}"
+                else:
+                    processed_text = corrected_text
+            else:
+                processed_text = self.compare_table.item(i, 3).text()
 
             # 解析时间戳
             start_time, end_time = self._parse_time_str(time_text)
-
-            from .bk_asr.ASRData import ASRDataSeg
-
             segments.append(ASRDataSeg(processed_text, start_time, end_time))
-
-        from .bk_asr.ASRData import ASRData
 
         return ASRData(segments)
 
@@ -575,6 +649,32 @@ class ASRWidget(QWidget):
         model_layout.addWidget(model_label)
         model_layout.addWidget(self.model_combo)
         deepseek_layout.addLayout(model_layout)
+
+        # 处理模式选择
+        mode_layout = QHBoxLayout()
+        mode_label = BodyLabel("处理模式:", self)
+        mode_label.setFixedWidth(70)
+        self.process_mode_combo = ComboBox(self)
+        self.process_mode_combo.addItems(["字幕修正", "翻译成英文(双语)"])
+        saved_mode = self.deepseek_config.get("process_mode", "字幕修正")
+        if saved_mode in ["字幕修正", "翻译成英文(双语)"]:
+            self.process_mode_combo.setCurrentText(saved_mode)
+        self.process_mode_combo.currentTextChanged.connect(self.on_process_mode_changed)
+        mode_layout.addWidget(mode_label)
+        mode_layout.addWidget(self.process_mode_combo)
+        deepseek_layout.addLayout(mode_layout)
+
+        # Prompt输入
+        prompt_label = BodyLabel("自定义Prompt:", self)
+        deepseek_layout.addWidget(prompt_label)
+        self.prompt_input = PlainTextEdit(self)
+        self.prompt_input.setPlaceholderText(
+            "留空使用默认Prompt。自定义指令会覆盖默认修正/翻译逻辑。"
+        )
+        self.prompt_input.setPlainText(self.deepseek_config.get_custom_prompt())
+        self.prompt_input.setMaximumHeight(100)
+        self.prompt_input.textChanged.connect(self.on_prompt_changed)
+        deepseek_layout.addWidget(self.prompt_input)
 
         # 保存配置和测试API按钮
         config_button_layout = QHBoxLayout()
@@ -945,6 +1045,14 @@ class ASRWidget(QWidget):
         """模型变化"""
         self.deepseek_config.set("model", text)
 
+    def on_prompt_changed(self):
+        """Prompt变化"""
+        self.deepseek_config.set("custom_prompt", self.prompt_input.toPlainText())
+
+    def on_process_mode_changed(self, text):
+        """处理模式变化"""
+        self.deepseek_config.set("process_mode", text)
+
     def save_deepseek_config(self):
         """保存DeepSeek配置"""
         self.deepseek_config.save_config()
@@ -1249,8 +1357,12 @@ class ASRWidget(QWidget):
             model=self.deepseek_config.get_model(),
         )
 
+        # 获取当前处理模式
+        is_bilingual = self.process_mode_combo.currentText() == "翻译成英文(双语)"
+
         # 先弹出对话框，显示原始字幕和处理进度
-        dialog = SubtitleEditDialog(original_data=asr_data, parent=self)
+        dialog_mode = "bilingual" if is_bilingual else "correct"
+        dialog = SubtitleEditDialog(original_data=asr_data, parent=self, mode=dialog_mode)
         dialog.show()
 
         # 禁用按钮
@@ -1263,9 +1375,14 @@ class ASRWidget(QWidget):
 
         def process_in_background():
             try:
-                result = processor.process_subtitles(
-                    asr_data, self.deepseek_config.get_custom_prompt()
-                )
+                if is_bilingual:
+                    result = processor.process_bilingual(
+                        asr_data, self.deepseek_config.get_custom_prompt()
+                    )
+                else:
+                    result = processor.process_subtitles(
+                        asr_data, self.deepseek_config.get_custom_prompt()
+                    )
                 # 使用信号更新UI
                 self.deepseek_finished_signal.emit(subtitle_path, result)
             except Exception as e:

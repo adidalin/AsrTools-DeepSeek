@@ -14,11 +14,13 @@ class SubtitleProcessResult:
         processed_data: ASRData,
         summary: str = "",
         changes: List[dict] = None,
+        corrected_data: ASRData = None,
     ):
         self.original_data = original_data  # 原始字幕数据
-        self.processed_data = processed_data  # 修正后的字幕数据
+        self.processed_data = processed_data  # 修正后的字幕数据（双语模式下包含原文+译文）
         self.summary = summary  # 内容摘要
         self.changes = changes or []  # 修改记录列表
+        self.corrected_data = corrected_data  # 校正后的纯中文数据（仅双语模式使用）
 
     def has_changes(self) -> bool:
         """是否有修改"""
@@ -85,6 +87,250 @@ class DeepSeekProcessor:
 
         # 解析处理结果
         return self._parse_process_result(result, asr_data)
+
+    def process_bilingual(
+        self, asr_data: ASRData, custom_prompt: str = None
+    ) -> SubtitleProcessResult:
+        """
+        处理字幕数据：先校正，再翻译成英文，生成双语字幕
+
+        Args:
+            asr_data: 原始ASR数据
+            custom_prompt: 自定义提示词（可选）
+
+        Returns:
+            SubtitleProcessResult: 包含原始数据、校正数据、双语数据
+        """
+        if not asr_data.has_data():
+            return SubtitleProcessResult(asr_data, asr_data, "空字幕", [])
+
+        subtitle_text = self._format_subtitles_for_processing(asr_data)
+        result = self._call_bilingual_api(subtitle_text, custom_prompt)
+
+        if result is None:
+            logging.error("DeepSeek双语翻译API调用失败，返回原始数据")
+            return SubtitleProcessResult(asr_data, asr_data, "处理失败", [])
+
+        return self._parse_bilingual_result(result, asr_data)
+
+    def _call_bilingual_api(
+        self, subtitle_text: str, custom_prompt: str = None
+    ) -> Optional[dict]:
+        """
+        调用DeepSeek API进行校正+翻译（一次调用完成两步）
+
+        Args:
+            subtitle_text: 字幕文本
+            custom_prompt: 自定义提示词
+
+        Returns:
+            处理结果字典，失败返回None
+        """
+        if not custom_prompt:
+            custom_prompt = self._get_default_bilingual_prompt()
+
+        full_prompt = f"{custom_prompt}\n\n以下是需要处理的字幕：\n{subtitle_text}"
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "你是一个专业的字幕处理助手。请先校正字幕中的错别字和语法错误，然后将校正后的字幕翻译成英文。返回JSON格式。",
+                },
+                {"role": "user", "content": full_prompt},
+            ],
+            "temperature": 0.3,
+            "max_tokens": 8192,
+        }
+
+        try:
+            response = requests.post(
+                self.api_url, headers=headers, json=payload, timeout=120
+            )
+            response.raise_for_status()
+
+            result = response.json()
+            if "choices" in result and len(result["choices"]) > 0:
+                content = result["choices"][0]["message"]["content"]
+                try:
+                    if "```json" in content:
+                        json_str = content.split("```json")[1].split("```")[0].strip()
+                    elif "```" in content:
+                        json_str = content.split("```")[1].split("```")[0].strip()
+                    else:
+                        json_str = content
+                    return json.loads(json_str)
+                except json.JSONDecodeError:
+                    return {"subtitles": content, "summary": "", "changes": []}
+            else:
+                logging.error(f"DeepSeek API返回格式异常: {result}")
+                return None
+
+        except requests.exceptions.RequestException as e:
+            logging.error(f"DeepSeek API请求失败: {e}")
+            return None
+        except Exception as e:
+            logging.error(f"处理DeepSeek响应时出错: {e}")
+            return None
+
+    def _get_default_bilingual_prompt(self) -> str:
+        """获取默认的双语提示词（校正+翻译）"""
+        return """请对以下字幕进行校正和翻译，要求：
+
+【处理规则】
+1. 先修正字幕中的错别字和语法错误，得到校正后的中文
+2. 将校正后的中文翻译成自然流畅的英文
+3. 保持所有时间戳（|HH:MM:SS,mmm --> HH:MM:SS,mmm|）完全不变
+4. 保持字幕行数不变，不要合并或拆分
+
+【输出格式】
+请以JSON格式返回：
+{
+  "summary": "字幕内容摘要（50字以内）",
+  "subtitles": [
+    {
+      "line": 行号,
+      "time": "时间戳（保留原始格式）",
+      "original": "原始文本",
+      "corrected": "校正后的中文",
+      "translated": "英文翻译"
+    }
+  ]
+}
+
+注意：
+- 字幕行数必须与输入完全一致
+- 只处理文字内容，不改变时间戳和行数
+- 请直接输出JSON，不要添加其他说明"""
+
+    def _parse_bilingual_result(
+        self, result: dict, original_data: ASRData
+    ) -> SubtitleProcessResult:
+        """
+        解析双语处理结果
+
+        Args:
+            result: DeepSeek返回的结果
+            original_data: 原始ASR数据
+
+        Returns:
+            SubtitleProcessResult对象，包含:
+            - original_data: 原始字幕
+            - corrected_data: 校正后的纯中文
+            - processed_data: 校正中文\n英文翻译
+        """
+        summary = result.get("summary", "")
+        subtitles = result.get("subtitles", [])
+
+        if isinstance(subtitles, str):
+            return self._parse_bilingual_text_result(subtitles, original_data, summary)
+
+        changes = []
+        corrected_segments = []
+        bilingual_segments = []
+
+        for sub in subtitles:
+            line_num = sub.get("line", 0)
+            original_text = sub.get("original", "")
+            corrected_text = sub.get("corrected", original_text)
+            translated_text = sub.get("translated", "")
+            time_str = sub.get("time", "")
+
+            start_time, end_time = self._parse_time_str(time_str)
+
+            if (
+                start_time == 0
+                and end_time == 0
+                and line_num > 0
+                and line_num <= len(original_data.segments)
+            ):
+                original_seg = original_data.segments[line_num - 1]
+                start_time = original_seg.start_time
+                end_time = original_seg.end_time
+
+            # 校正后的纯中文段
+            corrected_segments.append(ASRDataSeg(corrected_text, start_time, end_time))
+
+            # 双语段：校正中文\n英文翻译
+            if translated_text:
+                bilingual_text = f"{corrected_text}\n{translated_text}"
+            else:
+                bilingual_text = corrected_text
+            bilingual_segments.append(ASRDataSeg(bilingual_text, start_time, end_time))
+
+            # 记录中文变动（原始 != 校正）
+            if original_text.strip() != corrected_text.strip():
+                changes.append(
+                    {
+                        "line": line_num,
+                        "original": original_text,
+                        "processed": corrected_text,
+                        "reason": f"校正为: {corrected_text}",
+                    }
+                )
+
+        if len(corrected_segments) == 0:
+            logging.warning("解析结果为空，使用原始数据")
+            return SubtitleProcessResult(original_data, original_data, summary, [])
+
+        corrected_data = ASRData(corrected_segments)
+        processed_data = ASRData(bilingual_segments)
+        return SubtitleProcessResult(
+            original_data, processed_data, summary, changes, corrected_data
+        )
+
+    def _parse_bilingual_text_result(
+        self, text: str, original_data: ASRData, summary: str
+    ) -> SubtitleProcessResult:
+        """解析文本格式的双语结果（兼容旧格式）"""
+        processed_lines = []
+        for line in text.strip().split("\n"):
+            line = line.strip()
+            if "|" in line and "-->" in line:
+                processed_lines.append(line)
+
+        if len(processed_lines) != len(original_data.segments):
+            logging.warning(
+                f"处理后的字幕行数({len(processed_lines)})与原始行数({len(original_data.segments)})不匹配"
+            )
+            return SubtitleProcessResult(original_data, original_data, summary, [])
+
+        changes = []
+        corrected_segments = []
+        bilingual_segments = []
+        for i, (original_seg, processed_line) in enumerate(
+            zip(original_data.segments, processed_lines)
+        ):
+            try:
+                parts = processed_line.split("|", 2)
+                if len(parts) >= 3:
+                    translated_text = parts[2].strip()
+                    corrected_segments.append(
+                        ASRDataSeg(original_seg.text, original_seg.start_time, original_seg.end_time)
+                    )
+                    bilingual_text = f"{original_seg.text}\n{translated_text}"
+                    bilingual_segments.append(
+                        ASRDataSeg(bilingual_text, original_seg.start_time, original_seg.end_time)
+                    )
+                else:
+                    corrected_segments.append(original_seg)
+                    bilingual_segments.append(original_seg)
+            except Exception as e:
+                logging.error(f"解析第{i + 1}行字幕时出错: {e}")
+                corrected_segments.append(original_seg)
+                bilingual_segments.append(original_seg)
+
+        corrected_data = ASRData(corrected_segments)
+        processed_data = ASRData(bilingual_segments)
+        return SubtitleProcessResult(
+            original_data, processed_data, summary, changes, corrected_data
+        )
 
     def _format_subtitles_for_processing(self, asr_data: ASRData) -> str:
         """将字幕格式化为易于处理的文本格式"""
