@@ -1517,57 +1517,72 @@ class InfoWidget(QWidget):
    • 点击"应用修正"保存
         """
 
+        # 主布局
         main_layout = QVBoxLayout(self)
-        main_layout.setAlignment(Qt.AlignTop)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        # 创建滚动区域
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        # 创建内容容器
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setAlignment(Qt.AlignTop)
 
         # 标题
-        title_label = BodyLabel("  ASRTools - DeepSeek", self)
+        title_label = BodyLabel("  ASRTools - DeepSeek", content_widget)
         title_label.setFont(QFont("Segoe UI", 24, QFont.Bold))
         title_label.setAlignment(Qt.AlignCenter)
-        main_layout.addWidget(title_label)
+        content_layout.addWidget(title_label)
 
         # 应用描述
-        app_desc_label = BodyLabel(APP_DESCRIPTION, self)
+        app_desc_label = BodyLabel(APP_DESCRIPTION, content_widget)
         app_desc_label.setFont(QFont("Segoe UI", 11))
-        main_layout.addWidget(app_desc_label)
+        content_layout.addWidget(app_desc_label)
 
         # 功能介绍
-        features_label = BodyLabel(FEATURES, self)
+        features_label = BodyLabel(FEATURES, content_widget)
         features_label.setFont(QFont("Segoe UI", 10))
-        main_layout.addWidget(features_label)
+        content_layout.addWidget(features_label)
 
         # 使用说明
-        usage_label = BodyLabel(USAGE, self)
+        usage_label = BodyLabel(USAGE, content_widget)
         usage_label.setFont(QFont("Segoe UI", 10))
-        main_layout.addWidget(usage_label)
+        content_layout.addWidget(usage_label)
 
         # 贡献者信息
-        contributor_label = BodyLabel("👤 贡献者", self)
+        contributor_label = BodyLabel("👤 贡献者", content_widget)
         contributor_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
-        main_layout.addWidget(contributor_label)
+        content_layout.addWidget(contributor_label)
 
-        contributor_info = BodyLabel("小花荣 (adidalin)\nadidalin@qq.com", self)
+        contributor_info = BodyLabel("小花荣 (adidalin)\nadidalin@qq.com", content_widget)
         contributor_info.setFont(QFont("Segoe UI", 11))
-        main_layout.addWidget(contributor_info)
+        content_layout.addWidget(contributor_info)
 
         # 按钮区域
         button_layout = QHBoxLayout()
 
-        original_button = PushButton("原项目", self)
+        original_button = PushButton("原项目", content_widget)
         original_button.setIcon(FIF.GITHUB)
         original_button.setIconSize(QSize(20, 20))
         original_button.setMinimumHeight(36)
         original_button.clicked.connect(lambda _: webbrowser.open(ORIGINAL_GITHUB_URL))
         button_layout.addWidget(original_button)
 
-        my_button = PushButton("我的 GitHub", self)
+        my_button = PushButton("我的 GitHub", content_widget)
         my_button.setIcon(FIF.GITHUB)
         my_button.setIconSize(QSize(20, 20))
         my_button.setMinimumHeight(36)
         my_button.clicked.connect(lambda _: webbrowser.open(MY_GITHUB_URL))
         button_layout.addWidget(my_button)
 
-        main_layout.addLayout(button_layout)
+        content_layout.addLayout(button_layout)
+
+        # 设置滚动区域的内容
+        scroll_area.setWidget(content_widget)
+        main_layout.addWidget(scroll_area)
 
 
 class MainWindow(FluentWindow):
