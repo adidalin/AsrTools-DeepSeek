@@ -322,9 +322,10 @@ class SubtitleEditDialog(QDialog):
                 self.compare_table.setItem(i, 5, reason_item)
 
                 # 仅在中文变动时高亮（原始字幕 != 校正后字幕）
-                original_text = original_segs[i].text.strip()
-                corrected_text = processed_text.strip()
-                if original_text != corrected_text:
+                # 都只取中文部分（第一行）进行比较
+                original_cn = original_segs[i].text.split("\n", 1)[0].strip()
+                corrected_cn = processed_text.strip()
+                if original_cn != corrected_cn:
                     for j in range(6):
                         item = self.compare_table.item(i, j)
                         if item:
