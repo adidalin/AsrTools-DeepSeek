@@ -1447,36 +1447,105 @@ class InfoWidget(QWidget):
         self.init_ui()
 
     def init_ui(self):
-        # GitHub URL 和仓库描述
-        GITHUB_URL = "https://github.com/WEIFENG2333/AsrTools"
-        REPO_DESCRIPTION = """
-    🚀 无需复杂配置：无需 GPU 和繁琐的本地配置，小白也能轻松使用。
-    🖥️ 高颜值界面：基于 PyQt5 和 qfluentwidgets，界面美观且用户友好。
-    ⚡ 效率超人：多线程并发 + 批量处理，文字转换快如闪电。
-    📄 多格式支持：支持生成 .srt 和 .txt 字幕文件，满足不同需求。
+        # GitHub URL
+        ORIGINAL_GITHUB_URL = "https://github.com/WEIFENG2333/AsrTools"
+        MY_GITHUB_URL = "https://github.com/adidalin"
+
+        APP_DESCRIPTION = """
+🎤 AsrTools - DeepSeek AI 字幕修正版
+
+基于 WEIFENG2333/AsrTools 的修改版本，添加了 DeepSeek AI 字幕修正功能。
+        """
+
+        FEATURES = """
+✨ 新增功能：
+
+🤖 DeepSeek AI 字幕修正
+   • 智能修正错别字和语法错误
+   • 人名、地名、专有名词确认
+   • 保留原始时间戳，只修正文本内容
+
+📝 字幕预览和编辑
+   • 右侧面板显示字幕内容预览
+   • 支持直接编辑字幕内容
+   • 支持选择已有的字幕文件进行修正
+
+🔍 AI 修正对比弹窗
+   • 显示原始字幕和修正后字幕的对比
+   • 修改的行用黄色背景高亮显示
+   • 支持在对话框中继续手动编辑
+        """
+
+        USAGE = """
+📋 快速上手：
+
+1️⃣ 配置 DeepSeek API
+   • 输入 API 密钥
+   • 点击"测试 API"验证连接
+   • 勾选"启用 DeepSeek 字幕修正"
+
+2️⃣ 生成字幕
+   • 选择音频/视频文件
+   • 点击"开始处理"
+
+3️⃣ AI 修正
+   • 点击已处理的文件
+   • 点击"DeepSeek 修正"按钮
+   • 在弹窗中查看对比并编辑
+   • 点击"应用修正"保存
         """
 
         main_layout = QVBoxLayout(self)
         main_layout.setAlignment(Qt.AlignTop)
-        # main_layout.setSpacing(50)
 
         # 标题
-        title_label = BodyLabel("  ASRTools", self)
-        title_label.setFont(QFont("Segoe UI", 30, QFont.Bold))
+        title_label = BodyLabel("  ASRTools - DeepSeek", self)
+        title_label.setFont(QFont("Segoe UI", 24, QFont.Bold))
         title_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(title_label)
 
-        # 仓库描述区域
-        desc_label = BodyLabel(REPO_DESCRIPTION, self)
-        desc_label.setFont(QFont("Segoe UI", 12))
-        main_layout.addWidget(desc_label)
+        # 应用描述
+        app_desc_label = BodyLabel(APP_DESCRIPTION, self)
+        app_desc_label.setFont(QFont("Segoe UI", 11))
+        main_layout.addWidget(app_desc_label)
 
-        github_button = PushButton("GitHub 仓库", self)
-        github_button.setIcon(FIF.GITHUB)
-        github_button.setIconSize(QSize(20, 20))
-        github_button.setMinimumHeight(42)
-        github_button.clicked.connect(lambda _: webbrowser.open(GITHUB_URL))
-        main_layout.addWidget(github_button)
+        # 功能介绍
+        features_label = BodyLabel(FEATURES, self)
+        features_label.setFont(QFont("Segoe UI", 10))
+        main_layout.addWidget(features_label)
+
+        # 使用说明
+        usage_label = BodyLabel(USAGE, self)
+        usage_label.setFont(QFont("Segoe UI", 10))
+        main_layout.addWidget(usage_label)
+
+        # 贡献者信息
+        contributor_label = BodyLabel("👤 贡献者", self)
+        contributor_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        main_layout.addWidget(contributor_label)
+
+        contributor_info = BodyLabel("小花荣 (adidalin)\nadidalin@qq.com", self)
+        contributor_info.setFont(QFont("Segoe UI", 11))
+        main_layout.addWidget(contributor_info)
+
+        # 按钮区域
+        button_layout = QHBoxLayout()
+
+        original_button = PushButton("原项目", self)
+        original_button.setIcon(FIF.GITHUB)
+        original_button.setIconSize(QSize(20, 20))
+        original_button.setMinimumHeight(36)
+        original_button.clicked.connect(lambda _: webbrowser.open(ORIGINAL_GITHUB_URL))
+        button_layout.addWidget(original_button)
+
+        my_button = PushButton("我的 GitHub", self)
+        my_button.setIcon(FIF.GITHUB)
+        my_button.setIconSize(QSize(20, 20))
+        my_button.setMinimumHeight(36)
+        my_button.clicked.connect(lambda _: webbrowser.open(MY_GITHUB_URL))
+        button_layout.addWidget(my_button)
+
+        main_layout.addLayout(button_layout)
 
 
 class MainWindow(FluentWindow):
