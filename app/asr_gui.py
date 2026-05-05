@@ -68,9 +68,11 @@ from qfluentwidgets import (
 from .bk_asr.BcutASR import BcutASR
 from .bk_asr.JianYingASR import JianYingASR
 from .bk_asr.KuaiShouASR import KuaiShouASR
+from .bk_asr.TencentASR import TencentASR
 from .bk_asr.DeepSeekProcessor import DeepSeekProcessor, SubtitleProcessResult
 from .bk_asr.ASRData import ASRData
 from .deepseek_config import DeepSeekConfig
+from .tencent_config import TencentConfig
 
 # 设置日志配置
 logging.basicConfig(
@@ -423,11 +425,12 @@ class WorkerSignals(QObject):
 class ASRWorker(QRunnable):
     """ASR处理工作线程"""
 
-    def __init__(self, file_path, asr_engine, export_format):
+    def __init__(self, file_path, asr_engine, export_format, tencent_config=None):
         super().__init__()
         self.file_path = file_path
         self.asr_engine = asr_engine
         self.export_format = export_format
+        self.tencent_config = tencent_config
         self.signals = WorkerSignals()
 
         self.audio_path = None
@@ -455,10 +458,16 @@ class ASRWorker(QRunnable):
                 asr = JianYingASR(self.audio_path, use_cache=use_cache)
             elif self.asr_engine == "K 接口":
                 asr = KuaiShouASR(self.audio_path, use_cache=use_cache)
-            elif self.asr_engine == "Whisper":
-                # from bk_asr.WhisperASR import WhisperASR
-                # asr = WhisperASR(self.file_path, use_cache=use_cache)
-                raise NotImplementedError("WhisperASR 暂未实现")
+            elif self.asr_engine == "腾讯":
+                if not self.tencent_config or not self.tencent_config.is_configured():
+                    raise ValueError("请先配置腾讯云SecretId和SecretKey")
+                asr = TencentASR(
+                    self.audio_path,
+                    secret_id=self.tencent_config.get_secret_id(),
+                    secret_key=self.tencent_config.get_secret_key(),
+                    engine_model=self.tencent_config.get_engine_model(),
+                    use_cache=use_cache,
+                )
             else:
                 raise ValueError(f"未知的 ASR 引擎: {self.asr_engine}")
 
@@ -527,6 +536,7 @@ class ASRWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.deepseek_config = DeepSeekConfig()
+        self.tencent_config = TencentConfig()
         self.init_ui()
         self.max_threads = 3  # 设置最大线程数
         self.thread_pool = QThreadPool()
@@ -553,7 +563,8 @@ class ASRWidget(QWidget):
         engine_label = BodyLabel("选择接口:", self)
         engine_label.setFixedWidth(70)
         self.combo_box = ComboBox(self)
-        self.combo_box.addItems(["B 接口", "J 接口", "K 接口", "Whisper"])
+        self.combo_box.addItems(["B 接口", "J 接口", "K 接口", "腾讯"])
+        self.combo_box.currentTextChanged.connect(self.on_engine_changed)
         engine_layout.addWidget(engine_label)
         engine_layout.addWidget(self.combo_box)
         left_layout.addLayout(engine_layout)
@@ -689,6 +700,73 @@ class ASRWidget(QWidget):
         deepseek_layout.addLayout(config_button_layout)
 
         right_layout.addWidget(deepseek_group)
+
+        # 腾讯云配置区域
+        tencent_group = QGroupBox("腾讯云 ASR 配置")
+        tencent_layout = QVBoxLayout(tencent_group)
+
+        # SecretId输入
+        secret_id_layout = QHBoxLayout()
+        secret_id_label = BodyLabel("SecretId:", self)
+        secret_id_label.setFixedWidth(70)
+        self.secret_id_input = LineEdit(self)
+        self.secret_id_input.setPlaceholderText("腾讯云 SecretId")
+        self.secret_id_input.setEchoMode(LineEdit.Password)
+        self.secret_id_input.setText(self.tencent_config.get_secret_id())
+        self.secret_id_input.textChanged.connect(self.on_tencent_secret_id_changed)
+        secret_id_layout.addWidget(secret_id_label)
+        secret_id_layout.addWidget(self.secret_id_input)
+        tencent_layout.addLayout(secret_id_layout)
+
+        # SecretKey输入
+        secret_key_layout = QHBoxLayout()
+        secret_key_label = BodyLabel("SecretKey:", self)
+        secret_key_label.setFixedWidth(70)
+        self.secret_key_input = LineEdit(self)
+        self.secret_key_input.setPlaceholderText("腾讯云 SecretKey")
+        self.secret_key_input.setEchoMode(LineEdit.Password)
+        self.secret_key_input.setText(self.tencent_config.get_secret_key())
+        self.secret_key_input.textChanged.connect(self.on_tencent_secret_key_changed)
+        secret_key_layout.addWidget(secret_key_label)
+        secret_key_layout.addWidget(self.secret_key_input)
+        tencent_layout.addLayout(secret_key_layout)
+
+        # 引擎选择
+        tencent_engine_layout = QHBoxLayout()
+        tencent_engine_label = BodyLabel("识别引擎:", self)
+        tencent_engine_label.setFixedWidth(70)
+        self.tencent_engine_combo = ComboBox(self)
+        for name, value in TencentASR.ENGINE_OPTIONS.items():
+            self.tencent_engine_combo.addItem(name, userData=value)
+        saved_engine = self.tencent_config.get_engine_model()
+        for i in range(self.tencent_engine_combo.count()):
+            if self.tencent_engine_combo.itemData(i) == saved_engine:
+                self.tencent_engine_combo.setCurrentIndex(i)
+                break
+        self.tencent_engine_combo.currentIndexChanged.connect(
+            self.on_tencent_engine_changed
+        )
+        tencent_engine_layout.addWidget(tencent_engine_label)
+        tencent_engine_layout.addWidget(self.tencent_engine_combo)
+        tencent_layout.addLayout(tencent_engine_layout)
+
+        # 保存和测试按钮
+        tencent_button_layout = QHBoxLayout()
+        save_tencent_button = PushButton("保存配置", self)
+        save_tencent_button.clicked.connect(self.save_tencent_config)
+        tencent_button_layout.addWidget(save_tencent_button)
+
+        test_tencent_button = PushButton("测试连接", self)
+        test_tencent_button.clicked.connect(self.test_tencent_api)
+        tencent_button_layout.addWidget(test_tencent_button)
+        tencent_layout.addLayout(tencent_button_layout)
+
+        # 提示
+        tencent_tip = QLabel("💡 需要腾讯云账号，开通语音识别服务")
+        tencent_tip.setStyleSheet("color: gray; font-size: 11px;")
+        tencent_layout.addWidget(tencent_tip)
+
+        right_layout.addWidget(tencent_group)
 
         # 字幕预览区域
         preview_group = QGroupBox("字幕预览")
@@ -955,7 +1033,8 @@ class ASRWidget(QWidget):
         """处理单个文件"""
         selected_engine = self.combo_box.currentText()
         selected_format = self.format_combo.currentText()
-        worker = ASRWorker(file_path, selected_engine, selected_format)
+        tencent_config = self.tencent_config if selected_engine == "腾讯" else None
+        worker = ASRWorker(file_path, selected_engine, selected_format, tencent_config)
         worker.signals.finished.connect(self.update_table)
         worker.signals.errno.connect(self.handle_error)
         self.thread_pool.start(worker)
@@ -1144,6 +1223,122 @@ class ASRWidget(QWidget):
             InfoBar.error(
                 title="API测试失败",
                 content=f"错误: {str(e)}",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self,
+            )
+
+    def on_engine_changed(self, text):
+        """引擎切换时的处理"""
+        pass
+
+    def on_tencent_secret_id_changed(self, text):
+        self.tencent_config.set("secret_id", text)
+
+    def on_tencent_secret_key_changed(self, text):
+        self.tencent_config.set("secret_key", text)
+
+    def on_tencent_engine_changed(self, index):
+        engine_model = self.tencent_engine_combo.itemData(index)
+        if engine_model:
+            self.tencent_config.set("engine_model", engine_model)
+
+    def save_tencent_config(self):
+        self.tencent_config.save_config()
+        InfoBar.success(
+            title="配置已保存",
+            content="腾讯云配置已保存成功",
+            orient=Qt.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=2000,
+            parent=self,
+        )
+
+    def test_tencent_api(self):
+        if not self.tencent_config.is_configured():
+            InfoBar.warning(
+                title="API未配置",
+                content="请先填写SecretId和SecretKey",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self,
+            )
+            return
+
+        try:
+            import requests as req
+
+            timestamp = int(__import__("time").time())
+            date = __import__("datetime").datetime.fromtimestamp(
+                timestamp, tz=__import__("datetime").timezone.utc
+            ).strftime("%Y-%m-%d")
+
+            payload = '{"ServiceType": "asr"}'
+            host = "asr.tencentcloudapi.com"
+            headers = {
+                "Content-Type": "application/json; charset=utf-8",
+                "Host": host,
+                "X-TC-Action": "DescribeServiceStatus",
+                "X-TC-Version": "2019-06-14",
+                "X-TC-Timestamp": str(timestamp),
+            }
+
+            import hashlib, hmac as hmac_mod
+
+            canonical_headers = f"content-type:{headers['Content-Type']}\nhost:{host}\n"
+            signed_headers = "content-type;host"
+            payload_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+            canonical_request = f"POST\n/\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
+
+            credential_scope = f"{date}/asr/tc3_request"
+            string_to_sign = f"TC3-HMAC-SHA256\n{timestamp}\n{credential_scope}\n{hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()}"
+
+            def _hmac(key, msg):
+                return hmac_mod.new(key, msg.encode("utf-8"), hashlib.sha256).digest()
+
+            secret_date = _hmac(f"TC3{self.tencent_config.get_secret_key()}".encode("utf-8"), date)
+            secret_service = _hmac(secret_date, "asr")
+            secret_signing = _hmac(secret_service, "tc3_request")
+            signature = hmac_mod.new(secret_signing, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+
+            headers["Authorization"] = (
+                f"TC3-HMAC-SHA256 Credential={self.tencent_config.get_secret_id()}/{credential_scope}, "
+                f"SignedHeaders={signed_headers}, Signature={signature}"
+            )
+
+            resp = req.post(f"https://{host}", headers=headers, data=payload, timeout=10)
+            resp_data = resp.json()
+
+            if "Error" in resp_data.get("Response", {}):
+                error = resp_data["Response"]["Error"]
+                InfoBar.error(
+                    title="连接失败",
+                    content=f"{error.get('Code')}: {error.get('Message')}",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self,
+                )
+            else:
+                InfoBar.success(
+                    title="连接成功",
+                    content="腾讯云API验证通过",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self,
+                )
+        except Exception as e:
+            InfoBar.error(
+                title="连接失败",
+                content=str(e),
                 orient=Qt.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
