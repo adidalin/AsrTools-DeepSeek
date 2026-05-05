@@ -1272,23 +1272,22 @@ class ASRWidget(QWidget):
 
         try:
             import requests as req
+            import hashlib, hmac as hmac_mod
+            import time as _time
+            from datetime import datetime, timezone
 
-            timestamp = int(__import__("time").time())
-            date = __import__("datetime").datetime.fromtimestamp(
-                timestamp, tz=__import__("datetime").timezone.utc
-            ).strftime("%Y-%m-%d")
+            timestamp = int(_time.time())
+            date = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%d")
 
-            payload = '{"ServiceType": "asr"}'
+            payload = '{"ChannelNum":1,"EngineModelType":"16k_zh","ResTextFormat":0,"SourceType":1,"Data":"","DataLen":0}'
             host = "asr.tencentcloudapi.com"
             headers = {
                 "Content-Type": "application/json; charset=utf-8",
                 "Host": host,
-                "X-TC-Action": "DescribeServiceStatus",
+                "X-TC-Action": "CreateRecTask",
                 "X-TC-Version": "2019-06-14",
                 "X-TC-Timestamp": str(timestamp),
             }
-
-            import hashlib, hmac as hmac_mod
 
             canonical_headers = f"content-type:{headers['Content-Type']}\nhost:{host}\n"
             signed_headers = "content-type;host"
@@ -1313,18 +1312,32 @@ class ASRWidget(QWidget):
 
             resp = req.post(f"https://{host}", headers=headers, data=payload, timeout=10)
             resp_data = resp.json()
+            resp_inner = resp_data.get("Response", {})
 
-            if "Error" in resp_data.get("Response", {}):
-                error = resp_data["Response"]["Error"]
-                InfoBar.error(
-                    title="连接失败",
-                    content=f"{error.get('Code')}: {error.get('Message')}",
-                    orient=Qt.Horizontal,
-                    isClosable=True,
-                    position=InfoBarPosition.TOP,
-                    duration=3000,
-                    parent=self,
-                )
+            if "Error" in resp_inner:
+                error = resp_inner["Error"]
+                code = error.get("Code", "")
+                msg = error.get("Message", "")
+                if "Auth" in code or "Unauthorized" in code:
+                    InfoBar.error(
+                        title="鉴权失败",
+                        content=f"SecretId或SecretKey错误: {code}",
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=3000,
+                        parent=self,
+                    )
+                else:
+                    InfoBar.success(
+                        title="连接成功",
+                        content="腾讯云API验证通过(签名正确)",
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=2000,
+                        parent=self,
+                    )
             else:
                 InfoBar.success(
                     title="连接成功",
